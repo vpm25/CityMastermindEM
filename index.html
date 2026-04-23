@@ -1,0 +1,2138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>City Development Mastermind</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Figtree:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+
+<!-- ============================================================== -->
+<!-- FIREBASE CONFIG — paste your config below after creating your  -->
+<!-- Firebase project + Firestore. Instructions in the comment.     -->
+<!-- ============================================================== -->
+<!--
+  HOW TO GET YOUR CONFIG:
+  1. Go to https://console.firebase.google.com
+  2. Create a new project (any name)
+  3. In the project, click the </> (web) icon to add a web app, give it a nickname
+  4. Copy the firebaseConfig object that appears
+  5. In the left sidebar → Build → Firestore Database → Create database → Start in test mode
+  6. Replace the placeholder values below with your real ones.
+  7. For production, update Firestore rules (see README-FIREBASE.md instructions in chat).
+
+  While fields stay as "YOUR_..." placeholders, the app falls back to local storage —
+  useful for testing or preparing questions before deploying.
+-->
+<script type="module">
+  import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js';
+  import {
+    getDatabase, ref, get, set, remove, onValue
+  } from 'https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js';
+
+  // 👇 PASTE YOUR FIREBASE CONFIG HERE 👇
+  const firebaseConfig = {
+    apiKey: "AIzaSyBNAk8ubl-iqGH3TUz3XIcQOGJO7V-ItoM",
+    authDomain: "city-mastermind-em.firebaseapp.com",
+    projectId: "city-mastermind-em",
+    storageBucket: "city-mastermind-em.firebasestorage.app",
+    messagingSenderId: "771545121534",
+    appId: "1:771545121534:web:1fe5f1fa749686d14a1baf"
+  };
+
+  // Detect if config is still placeholder → fallback mode
+  const isPlaceholder = Object.values(firebaseConfig).some(v => typeof v === 'string' && v.startsWith('YOUR_'));
+
+  if (!isPlaceholder) {
+    try {
+      const app = initializeApp(firebaseConfig);
+      const db = getDatabase(app);
+      window.__firebase = {
+        db, ref, get, set, remove, onValue,
+        ready: true,
+        mode: 'rtdb'
+      };
+      console.log('✓ Firebase Realtime Database connected');
+    } catch (e) {
+      console.warn('Firebase init failed, falling back to local storage:', e);
+      window.__firebase = { ready: false };
+    }
+  } else {
+    console.log('ℹ Firebase config is placeholder — using local storage fallback');
+    window.__firebase = { ready: false };
+  }
+
+  // Let the main script know Firebase init is done
+  window.dispatchEvent(new Event('firebase-check-complete'));
+</script>
+
+<style>
+  :root {
+    --ink: #0f2e22;
+    --green: #0a5f3e;
+    --green-soft: #e8f1ec;
+    --cream: #faf8f3;
+    --gold: #b08d3f;
+    --danger: #a3342a;
+    --border: rgba(15, 46, 34, 0.1);
+    --border-soft: rgba(15, 46, 34, 0.06);
+    --muted: rgba(15, 46, 34, 0.5);
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { min-height: 100vh; }
+  body {
+    font-family: 'Figtree', ui-sans-serif, system-ui, sans-serif;
+    background: var(--cream); color: var(--ink);
+    font-size: 16px; line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font-family: inherit; border: none; background: none; cursor: pointer; color: inherit; }
+  button:disabled { cursor: not-allowed; }
+  textarea, input, select { font-family: inherit; font-size: inherit; color: inherit; }
+
+  .container { max-width: 1100px; margin: 0 auto; padding: 0 24px; }
+  .container-narrow { max-width: 820px; margin: 0 auto; padding: 0 24px; }
+
+  /* HEADER */
+  header { border-bottom: 1px solid var(--border); }
+  .header-inner { display: flex; align-items: center; justify-content: space-between; padding: 20px 0; }
+  .logo { display: flex; align-items: center; gap: 12px; background: none; border: none; padding: 4px; border-radius: 8px; }
+  .logo:hover { background: rgba(15, 46, 34, 0.03); }
+  .logo-title {
+    font-size: 13px; letter-spacing: 0.24em; font-weight: 600;
+    color: var(--ink); text-transform: uppercase;
+    transition: opacity 0.2s;
+  }
+  .logo:hover .logo-title { opacity: 0.65; }
+  .header-right { display: flex; align-items: center; gap: 16px; }
+  .live-pill {
+    display: flex; align-items: center; gap: 6px;
+    font-size: 10px; letter-spacing: 0.15em; text-transform: uppercase;
+    padding: 6px 10px; border-radius: 999px;
+    background: var(--green-soft); color: var(--green);
+  }
+  .live-dot-sm {
+    width: 6px; height: 6px; border-radius: 999px; background: var(--green);
+    animation: pulse 1.8s ease-in-out infinite;
+  }
+  .toggle-view {
+    display: flex; align-items: center; gap: 8px;
+    padding: 8px 16px;
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    border-bottom: 1px solid var(--ink);
+    transition: gap 0.2s;
+  }
+  .toggle-view:hover { gap: 12px; }
+
+  /* ---------- Welcome / language ---------- */
+  .welcome {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 64px;
+    align-items: center; padding: 80px 0;
+  }
+  @media (max-width: 768px) { .welcome { grid-template-columns: 1fr; gap: 48px; padding: 48px 0; } }
+  .eyebrow {
+    font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase;
+    color: var(--green); margin-bottom: 16px; font-weight: 500;
+  }
+  h1.hero {
+    font-family: 'Figtree', sans-serif;
+    font-size: clamp(36px, 4.5vw, 56px);
+    line-height: 1.1; font-weight: 500; letter-spacing: -0.02em;
+    margin-bottom: 12px;
+  }
+  h1.hero .italic { display: block; font-weight: 400; color: var(--green); letter-spacing: -0.02em; }
+  .intro { font-size: 18px; opacity: 0.7; margin-top: 24px; max-width: 420px; }
+  .btn {
+    display: inline-flex; align-items: center; gap: 12px;
+    padding: 16px 28px;
+    font-size: 12px; letter-spacing: 0.12em; text-transform: uppercase;
+    font-weight: 500; transition: gap 0.2s, opacity 0.2s, background 0.2s;
+    border-radius: 0;
+  }
+  .btn:hover:not(:disabled) { gap: 16px; }
+  .btn:disabled { opacity: 0.3; }
+  .btn-primary { background: var(--ink); color: var(--cream); }
+  .btn-green { background: var(--green); color: var(--cream); }
+  .btn-outline { background: transparent; border: 1px solid var(--ink); color: var(--ink); }
+  .btn-danger { background: transparent; border: 1px solid var(--danger); color: var(--danger); }
+  .btn-sm { padding: 8px 14px; font-size: 11px; }
+  .hero-cta { margin-top: 40px; }
+
+  .lang-card-wrap { position: relative; }
+  .grain {
+    position: absolute; inset: -24px; border-radius: 24px;
+    background-image: radial-gradient(circle at 1px 1px, rgba(15, 46, 34, 0.08) 1px, transparent 0);
+    background-size: 16px 16px; opacity: 0.4; pointer-events: none;
+  }
+  .lang-card {
+    position: relative; background: white;
+    padding: 40px; border-radius: 20px;
+    box-shadow: 0 1px 0 rgba(15, 46, 34, 0.04), 0 30px 60px -30px rgba(15, 46, 34, 0.25);
+  }
+  .lang-card .heading { display: flex; align-items: center; gap: 8px; margin-bottom: 24px; }
+  .lang-card .heading .eyebrow { margin: 0; }
+  .lang-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .lang-btn {
+    text-align: left; padding: 12px 16px; border-radius: 8px;
+    border: 1px solid rgba(15, 46, 34, 0.08);
+    background: transparent; transition: all 0.15s;
+  }
+  .lang-btn:hover { border-color: rgba(15, 46, 34, 0.2); }
+  .lang-btn.active { border-color: var(--green); background: var(--green-soft); }
+  .lang-btn .top { display: flex; justify-content: space-between; align-items: center; }
+  .lang-btn .label { font-size: 14px; font-weight: 500; }
+  .lang-btn .code { font-size: 10px; opacity: 0.5; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px; }
+
+  /* ---------- Question screen ---------- */
+  .question-wrap { padding: 56px 0; }
+  .question-meta {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 40px;
+  }
+  .question-meta .left { font-size: 10px; letter-spacing: 0.25em; text-transform: uppercase; color: var(--green); font-weight: 500; }
+  .question-meta .right { font-size: 10px; letter-spacing: 0.12em; text-transform: uppercase; opacity: 0.5; }
+
+  h2.question {
+    font-family: 'Figtree', sans-serif;
+    font-size: clamp(24px, 3vw, 32px);
+    line-height: 1.3; font-weight: 500; letter-spacing: -0.015em;
+    margin-bottom: 32px;
+  }
+  textarea {
+    width: 100%; padding: 16px 20px; border-radius: 10px;
+    border: 1px solid rgba(15, 46, 34, 0.15);
+    background: white; font-size: 16px; resize: none; outline: none;
+    transition: border-color 0.2s; line-height: 1.5;
+  }
+  textarea:focus { border-color: var(--green); }
+  input.text-input {
+    width: 100%; padding: 12px 16px; border-radius: 8px;
+    border: 1px solid rgba(15, 46, 34, 0.15);
+    background: white; outline: none; transition: border-color 0.2s;
+  }
+  input.text-input:focus { border-color: var(--green); }
+  select.select-input {
+    padding: 12px 16px; border-radius: 8px;
+    border: 1px solid rgba(15, 46, 34, 0.15);
+    background: white; outline: none; transition: border-color 0.2s;
+    cursor: pointer;
+  }
+
+  .rating { display: flex; gap: 8px; }
+  .rating button {
+    flex: 1; padding: 24px 8px; border-radius: 10px;
+    border: 1px solid rgba(15, 46, 34, 0.12); background: white;
+    display: flex; flex-direction: column; align-items: center; gap: 8px;
+    transition: all 0.15s;
+  }
+  .rating button:hover { border-color: rgba(15, 46, 34, 0.3); }
+  .rating button.active { border-color: var(--green); background: var(--green-soft); }
+  .rating button .num { font-weight: 500; font-size: 18px; }
+
+  .choice-list { display: flex; flex-direction: column; gap: 8px; }
+  .choice-btn {
+    text-align: left; padding: 16px 20px; border-radius: 10px;
+    border: 1px solid rgba(15, 46, 34, 0.12); background: white;
+    display: flex; align-items: center; justify-content: space-between;
+    transition: all 0.15s; font-size: 16px; width: 100%;
+  }
+  .choice-btn:hover { border-color: rgba(15, 46, 34, 0.3); }
+  .choice-btn.active { border-color: var(--green); background: var(--green-soft); }
+
+  .nav { display: flex; justify-content: flex-end; align-items: center; margin-top: 48px; }
+  .error { color: var(--danger); font-size: 14px; margin-top: 16px; }
+
+  /* ---------- Waiting / answered / ended ---------- */
+  .status-screen { text-align: center; padding: 120px 24px; }
+  .status-icon {
+    width: 72px; height: 72px; margin: 0 auto 32px;
+    border-radius: 999px; background: var(--green-soft);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--green);
+  }
+  .status-title { font-family: 'Figtree', sans-serif; font-size: clamp(28px, 3.5vw, 40px); font-weight: 500; letter-spacing: -0.015em; margin-bottom: 16px; }
+  .status-sub { opacity: 0.6; font-size: 17px; max-width: 440px; margin: 0 auto; }
+  .status-dots { display: inline-flex; gap: 6px; margin-top: 24px; }
+  .status-dots span {
+    width: 8px; height: 8px; border-radius: 999px; background: var(--green);
+    animation: bounce 1.4s ease-in-out infinite;
+  }
+  .status-dots span:nth-child(2) { animation-delay: 0.2s; }
+  .status-dots span:nth-child(3) { animation-delay: 0.4s; }
+
+  @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.4; } }
+  @keyframes bounce {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40% { transform: scale(1); opacity: 1; }
+  }
+  @keyframes rise { from { opacity: 0; transform: translateY(12px); } to { opacity: 1; transform: translateY(0); } }
+  .rise { animation: rise 0.5s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+  @keyframes slideIn { from { opacity: 0; transform: translateX(20px); } to { opacity: 1; transform: translateX(0); } }
+  .slide-in { animation: slideIn 0.4s cubic-bezier(0.2, 0.7, 0.2, 1) both; }
+
+  /* ---------- Admin panel ---------- */
+  .admin-wrap { padding: 40px 0 80px; }
+  .admin-head { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 48px; gap: 16px; flex-wrap: wrap; }
+  .admin-head h1 { font-family: 'Figtree', sans-serif; font-size: clamp(28px, 3.5vw, 40px); font-weight: 500; letter-spacing: -0.015em; }
+  .admin-section { margin-bottom: 48px; }
+  .admin-section-head {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 16px; padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-soft);
+  }
+  .admin-section-head .eyebrow { margin: 0; }
+
+  .active-panel {
+    background: var(--ink); color: var(--cream);
+    border-radius: 16px; padding: 28px; margin-bottom: 24px;
+  }
+  .active-panel .eyebrow { color: rgba(250, 248, 243, 0.6); margin-bottom: 8px; }
+  .active-panel .title {
+    font-weight: 500; font-size: 20px; line-height: 1.4; letter-spacing: -0.01em;
+    margin-bottom: 16px;
+  }
+  .active-panel .meta { display: flex; gap: 20px; font-size: 13px; opacity: 0.75; margin-bottom: 20px; }
+  .active-panel .actions { display: flex; gap: 8px; }
+  .active-panel .btn { background: var(--cream); color: var(--ink); }
+  .active-panel .btn-outline { background: transparent; border-color: rgba(250, 248, 243, 0.3); color: var(--cream); }
+  .active-panel.empty { background: white; color: var(--ink); border: 1px dashed var(--border); text-align: center; padding: 48px 24px; }
+  .active-panel.empty .title { font-weight: 400; color: var(--muted); font-size: 16px; }
+
+  .q-list { display: flex; flex-direction: column; gap: 8px; }
+  .q-card {
+    background: white; border-radius: 12px; border: 1px solid var(--border-soft);
+    padding: 16px 20px; display: flex; align-items: center; gap: 16px;
+    transition: border-color 0.2s;
+  }
+  .q-card.active { border-color: var(--green); background: var(--green-soft); }
+  .q-card .q-num {
+    width: 34px; height: 34px; border-radius: 999px; background: var(--cream);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 13px; font-weight: 600; flex-shrink: 0;
+  }
+  .q-card.active .q-num { background: var(--green); color: var(--cream); }
+  .q-card .q-body { flex: 1; min-width: 0; }
+  .q-card .q-text { font-size: 15px; margin-bottom: 4px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .q-card .q-meta { font-size: 11px; opacity: 0.55; text-transform: uppercase; letter-spacing: 0.1em; display: flex; gap: 12px; align-items: center; }
+  .q-card .q-meta .badge {
+    padding: 2px 8px; border-radius: 4px; background: var(--cream);
+    font-size: 10px;
+  }
+  .q-card.active .q-meta .badge { background: rgba(10, 95, 62, 0.15); color: var(--green); }
+  .q-card .q-actions { display: flex; gap: 6px; flex-shrink: 0; flex-wrap: wrap; justify-content: flex-end; }
+  .q-action {
+    padding: 7px 12px; border-radius: 6px; border: 1px solid var(--border);
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase;
+    transition: all 0.15s; font-weight: 500;
+  }
+  .q-action:hover { border-color: var(--ink); }
+  .q-action.primary { background: var(--green); color: var(--cream); border-color: var(--green); }
+  .q-action.primary:hover { background: #0c7049; }
+  .q-action.danger { color: var(--danger); border-color: rgba(163, 52, 42, 0.25); }
+  .q-action.danger:hover { background: rgba(163, 52, 42, 0.05); }
+
+  .add-q-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    width: 100%; padding: 16px;
+    background: transparent; border: 1px dashed var(--border);
+    border-radius: 12px; font-size: 13px; color: var(--muted);
+    transition: all 0.15s; margin-top: 8px;
+  }
+  .add-q-btn:hover { border-color: var(--green); color: var(--green); background: rgba(10, 95, 62, 0.02); }
+
+  .session-actions { display: flex; gap: 12px; flex-wrap: wrap; }
+
+  /* Live answers stream */
+  .live-stream {
+    background: white; border-radius: 12px; padding: 20px;
+    border: 1px solid var(--border-soft); max-height: 400px; overflow-y: auto;
+  }
+  .live-stream-empty { padding: 24px; text-align: center; color: var(--muted); font-size: 13px; }
+  .live-answer {
+    padding: 12px 0; border-bottom: 1px solid var(--border-soft);
+    display: flex; gap: 12px; align-items: flex-start;
+  }
+  .live-answer:last-child { border-bottom: none; }
+  .live-answer .pill {
+    flex-shrink: 0; padding: 3px 8px; border-radius: 999px;
+    background: var(--cream); font-size: 10px; letter-spacing: 0.1em;
+    text-transform: uppercase; opacity: 0.7;
+  }
+  .live-answer .content { flex: 1; font-size: 14px; }
+  .live-answer .content .value { font-weight: 500; }
+  .live-answer .content .when { font-size: 11px; opacity: 0.5; margin-top: 2px; }
+
+  /* ---------- Modal ---------- */
+  .modal-backdrop {
+    position: fixed; inset: 0; background: rgba(15, 46, 34, 0.55);
+    backdrop-filter: blur(4px);
+    display: flex; align-items: center; justify-content: center;
+    z-index: 100; padding: 24px;
+    animation: fadeIn 0.2s ease both;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal {
+    background: var(--cream); border-radius: 20px; padding: 32px;
+    max-width: 640px; width: 100%; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 30px 80px -20px rgba(0,0,0,0.4);
+  }
+  .modal-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+  .modal-title { font-family: 'Figtree', sans-serif; font-size: 22px; font-weight: 600; letter-spacing: -0.015em; }
+  .modal-close {
+    width: 32px; height: 32px; border-radius: 999px;
+    background: transparent; display: flex; align-items: center; justify-content: center;
+    transition: background 0.2s;
+  }
+  .modal-close:hover { background: rgba(15, 46, 34, 0.06); }
+
+  .field { margin-bottom: 20px; }
+  .field-label {
+    font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--muted); margin-bottom: 8px; font-weight: 500;
+    display: flex; align-items: center; justify-content: space-between;
+  }
+  .field-label .hint { font-size: 10px; letter-spacing: 0; text-transform: none; font-weight: 400; opacity: 0.7; }
+  .row-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 560px) { .row-2 { grid-template-columns: 1fr; } }
+
+  .lang-tabs {
+    display: flex; gap: 4px; padding: 4px; background: white;
+    border-radius: 10px; margin-bottom: 12px; overflow-x: auto;
+  }
+  .lang-tab {
+    padding: 6px 12px; border-radius: 6px; font-size: 11px; font-weight: 500;
+    letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+    transition: all 0.15s;
+  }
+  .lang-tab:hover { background: var(--cream); }
+  .lang-tab.active { background: var(--ink); color: var(--cream); }
+  .lang-tab .has-content { display: inline-block; width: 6px; height: 6px; border-radius: 999px; background: var(--green); margin-left: 6px; vertical-align: middle; }
+
+  .translate-row {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 12px; gap: 12px;
+  }
+  .translate-btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 14px; border-radius: 999px;
+    background: linear-gradient(135deg, var(--green) 0%, #0c7049 100%);
+    color: var(--cream);
+    font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; font-weight: 500;
+    transition: all 0.2s;
+    box-shadow: 0 2px 8px -2px rgba(10, 95, 62, 0.4);
+  }
+  .translate-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 4px 12px -2px rgba(10, 95, 62, 0.5); }
+  .translate-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+  .translate-btn.loading {
+    background: linear-gradient(90deg, var(--green) 0%, #0c7049 50%, var(--green) 100%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s linear infinite;
+  }
+  @keyframes shimmer {
+    0% { background-position: -100% 0; }
+    100% { background-position: 100% 0; }
+  }
+  .translate-source-hint {
+    font-size: 11px; opacity: 0.55; font-style: italic;
+  }
+
+  .options-list { display: flex; flex-direction: column; gap: 8px; }
+  .option-row { display: flex; gap: 8px; align-items: center; }
+  .option-row input { flex: 1; }
+  .option-remove {
+    width: 36px; height: 36px; border-radius: 8px;
+    background: transparent; border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--danger); transition: all 0.15s;
+  }
+  .option-remove:hover { background: rgba(163, 52, 42, 0.05); }
+  .option-add {
+    align-self: flex-start; font-size: 12px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--green);
+    padding: 8px 0; margin-top: 4px;
+  }
+
+  .modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 32px; }
+
+  .checkbox-row { display: flex; align-items: center; gap: 8px; cursor: pointer; }
+  .checkbox-row input { width: 16px; height: 16px; accent-color: var(--green); }
+
+  /* Confirm dialog */
+  .confirm-text { margin-bottom: 24px; }
+
+  /* Hint */
+  .admin-hint {
+    background: var(--green-soft); color: var(--green);
+    padding: 12px 16px; border-radius: 10px; font-size: 13px;
+    margin-bottom: 24px; display: flex; gap: 10px; align-items: flex-start;
+  }
+
+  .icon { width: 16px; height: 16px; stroke-width: 2; flex-shrink: 0; }
+  .icon-sm { width: 12px; height: 12px; stroke-width: 2; flex-shrink: 0; }
+  .icon-lg { width: 32px; height: 32px; stroke-width: 2.5; flex-shrink: 0; }
+  .icon-xl { width: 40px; height: 40px; stroke-width: 2; flex-shrink: 0; }
+
+  /* Toast notification */
+  .toast {
+    position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+    background: var(--ink); color: var(--cream);
+    padding: 12px 22px; border-radius: 999px;
+    font-size: 13px; letter-spacing: 0.02em; font-weight: 500;
+    box-shadow: 0 8px 24px -4px rgba(15, 46, 34, 0.3);
+    z-index: 200; display: flex; align-items: center; gap: 8px;
+    animation: toast-in 0.3s cubic-bezier(0.2, 0.7, 0.2, 1) both;
+  }
+  .toast.hide { animation: toast-out 0.25s ease both; }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translate(-50%, 16px); }
+    to { opacity: 1; transform: translate(-50%, 0); }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; transform: translate(-50%, 0); }
+    to { opacity: 0; transform: translate(-50%, 16px); }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container header-inner">
+    <button id="logo" class="logo" aria-label="City Development Mastermind">
+      <span class="logo-title">CITY DEVELOPMENT MASTERMIND</span>
+    </button>
+    <div id="headerRight" class="header-right"></div>
+  </div>
+</header>
+
+<main id="app"></main>
+<div id="modalRoot"></div>
+
+<script>
+// =================================================================
+// UI STRINGS
+// =================================================================
+const uiStrings = {
+  en: {
+    label: "English",
+    welcome: "Quarterly Session",
+    subtitle: "Feedback for Improvement",
+    intro: "The host will guide you through one question at a time. It takes just a minute.",
+    start: "Begin",
+    pickLanguage: "Choose your language",
+    section: "Live session",
+    submit: "Submit answer",
+    placeholder: "Write your answer here...",
+    optional: "optional",
+    waitingTitle: "Waiting for the host",
+    waitingSub: "The next question will appear here as soon as the host opens it.",
+    answeredTitle: "Answer submitted",
+    answeredSub: "Thanks — hold tight for the next question.",
+    endedTitle: "Thank you",
+    endedSub: "The session has concluded. Your feedback has been recorded.",
+    errorSave: "Could not save your answer. Please try again.",
+    questionClosed: "This question was just closed by the host.",
+    changeLanguage: "Change language",
+  },
+  es: {
+    label: "Español",
+    welcome: "Sesión Trimestral",
+    subtitle: "Retroalimentación para Mejorar",
+    intro: "El anfitrión te guiará pregunta por pregunta. Solo toma un minuto.",
+    start: "Comenzar",
+    pickLanguage: "Elige tu idioma",
+    section: "Sesión en vivo",
+    submit: "Enviar respuesta",
+    placeholder: "Escribe tu respuesta aquí...",
+    optional: "opcional",
+    waitingTitle: "Esperando al anfitrión",
+    waitingSub: "La siguiente pregunta aparecerá aquí en cuanto el anfitrión la abra.",
+    answeredTitle: "Respuesta enviada",
+    answeredSub: "Gracias — espera la siguiente pregunta.",
+    endedTitle: "Gracias",
+    endedSub: "La sesión ha terminado. Tu feedback ha sido registrado.",
+    errorSave: "No se pudo guardar tu respuesta. Intenta de nuevo.",
+    questionClosed: "El anfitrión acaba de cerrar esta pregunta.",
+    changeLanguage: "Cambiar idioma",
+  },
+  pt: {
+    label: "Português", welcome: "Sessão Trimestral", subtitle: "Feedback para Melhoria",
+    intro: "O anfitrião vai guiar você pergunta por pergunta. Leva só um minuto.",
+    start: "Começar", pickLanguage: "Escolha seu idioma", section: "Sessão ao vivo",
+    submit: "Enviar resposta", placeholder: "Escreva sua resposta aqui...", optional: "opcional",
+    waitingTitle: "Aguardando o anfitrião",
+    waitingSub: "A próxima pergunta aparecerá aqui assim que o anfitrião abri-la.",
+    answeredTitle: "Resposta enviada", answeredSub: "Obrigado — aguarde a próxima pergunta.",
+    endedTitle: "Obrigado", endedSub: "A sessão terminou. Seu feedback foi registrado.",
+    errorSave: "Não foi possível salvar sua resposta. Tente novamente.",
+    questionClosed: "O anfitrião acabou de fechar esta pergunta.",
+    changeLanguage: "Mudar idioma",
+  },
+  fr: {
+    label: "Français", welcome: "Session Trimestrielle", subtitle: "Retour pour Amélioration",
+    intro: "L'animateur vous guidera question par question. Cela ne prend qu'une minute.",
+    start: "Commencer", pickLanguage: "Choisissez votre langue", section: "Session en direct",
+    submit: "Envoyer la réponse", placeholder: "Écrivez votre réponse ici...", optional: "facultatif",
+    waitingTitle: "En attente de l'animateur",
+    waitingSub: "La prochaine question apparaîtra dès que l'animateur l'ouvrira.",
+    answeredTitle: "Réponse envoyée", answeredSub: "Merci — attendez la prochaine question.",
+    endedTitle: "Merci", endedSub: "La session est terminée. Votre retour a été enregistré.",
+    errorSave: "Impossible d'enregistrer votre réponse. Veuillez réessayer.",
+    questionClosed: "L'animateur vient de fermer cette question.",
+    changeLanguage: "Changer de langue",
+  },
+  de: {
+    label: "Deutsch", welcome: "Quartalssitzung", subtitle: "Feedback zur Verbesserung",
+    intro: "Der Moderator führt Sie Frage für Frage. Dauert nur eine Minute.",
+    start: "Beginnen", pickLanguage: "Wählen Sie Ihre Sprache", section: "Live-Sitzung",
+    submit: "Antwort senden", placeholder: "Schreiben Sie Ihre Antwort hier...", optional: "optional",
+    waitingTitle: "Warten auf den Moderator",
+    waitingSub: "Die nächste Frage erscheint, sobald der Moderator sie öffnet.",
+    answeredTitle: "Antwort gesendet", answeredSub: "Danke — bitte warten Sie auf die nächste Frage.",
+    endedTitle: "Vielen Dank", endedSub: "Die Sitzung ist beendet. Ihr Feedback wurde erfasst.",
+    errorSave: "Antwort konnte nicht gespeichert werden. Bitte erneut versuchen.",
+    questionClosed: "Der Moderator hat diese Frage gerade geschlossen.",
+    changeLanguage: "Sprache ändern",
+  },
+  it: {
+    label: "Italiano", welcome: "Sessione Trimestrale", subtitle: "Feedback per Migliorare",
+    intro: "Il moderatore ti guiderà domanda per domanda. Richiede solo un minuto.",
+    start: "Inizia", pickLanguage: "Scegli la tua lingua", section: "Sessione dal vivo",
+    submit: "Invia risposta", placeholder: "Scrivi la tua risposta qui...", optional: "facoltativo",
+    waitingTitle: "In attesa del moderatore",
+    waitingSub: "La prossima domanda apparirà non appena il moderatore la aprirà.",
+    answeredTitle: "Risposta inviata", answeredSub: "Grazie — aspetta la prossima domanda.",
+    endedTitle: "Grazie", endedSub: "La sessione è terminata. Il tuo feedback è stato registrato.",
+    errorSave: "Impossibile salvare la risposta. Riprova.",
+    questionClosed: "Il moderatore ha appena chiuso questa domanda.",
+    changeLanguage: "Cambia lingua",
+  },
+  nl: {
+    label: "Nederlands", welcome: "Kwartaalsessie", subtitle: "Feedback voor Verbetering",
+    intro: "De host leidt je vraag per vraag. Duurt maar een minuut.",
+    start: "Beginnen", pickLanguage: "Kies je taal", section: "Live sessie",
+    submit: "Antwoord versturen", placeholder: "Schrijf hier je antwoord...", optional: "optioneel",
+    waitingTitle: "Wachten op de host",
+    waitingSub: "De volgende vraag verschijnt zodra de host hem opent.",
+    answeredTitle: "Antwoord verstuurd", answeredSub: "Bedankt — wacht op de volgende vraag.",
+    endedTitle: "Bedankt", endedSub: "De sessie is afgelopen. Je feedback is geregistreerd.",
+    errorSave: "Kon je antwoord niet opslaan. Probeer opnieuw.",
+    questionClosed: "De host heeft deze vraag zojuist gesloten.",
+    changeLanguage: "Taal wijzigen",
+  },
+  zh: {
+    label: "中文", welcome: "季度会议", subtitle: "改进反馈",
+    intro: "主持人将逐题引导您。只需一分钟。",
+    start: "开始", pickLanguage: "选择您的语言", section: "实时会议",
+    submit: "提交答案", placeholder: "在此输入您的回答...", optional: "可选",
+    waitingTitle: "等待主持人",
+    waitingSub: "主持人开启后,下一个问题将出现在这里。",
+    answeredTitle: "答案已提交", answeredSub: "谢谢 — 请等待下一个问题。",
+    endedTitle: "谢谢", endedSub: "会议已结束。您的反馈已记录。",
+    errorSave: "无法保存您的答案。请重试。",
+    questionClosed: "主持人刚刚关闭了此问题。",
+    changeLanguage: "更改语言",
+  },
+};
+
+// Admin UI strings (EN + ES, fallback to EN)
+const adminStrings = {
+  en: {
+    adminPanel: "Admin Panel",
+    exitAdmin: "Exit admin",
+    heading: "Session control",
+    subheading: "Activate questions one at a time. Participants see them instantly.",
+    tip: "Tip — Share the survey link with participants. They'll see whichever question you activate. When adding a question, use ✨ Auto-translate to fill in all languages at once.",
+    activeNow: "Active now",
+    noneActive: "No question is active",
+    noneActiveSub: "Activate a question below to show it to participants.",
+    closeQuestion: "Close question",
+    responses: "responses",
+    questions: "Questions",
+    activate: "Activate",
+    edit: "Edit",
+    delete: "Delete",
+    deleteConfirm: "Delete this question? Responses to it will remain but be orphaned.",
+    active: "Active",
+    addQuestion: "Add question",
+    session: "Session",
+    resetAll: "Clear all responses",
+    resetConfirm: "Delete all responses? This cannot be undone.",
+    endSession: "End session",
+    endConfirm: "End the session? Participants will see a thank-you screen.",
+    reopenSession: "Reopen session",
+    // Editor
+    newQuestion: "New question",
+    editQuestion: "Edit question",
+    typeLabel: "Question type",
+    typeText: "Text (open-ended)",
+    typeRating: "Rating (1–5 stars)",
+    typeChoice: "Multiple choice",
+    optional: "Optional (can be skipped)",
+    textByLang: "Question text",
+    textHint: "Each language is shown to participants using that language",
+    optionsByLang: "Options",
+    optionsHint: "Write one option per line",
+    optionPlaceholder: "Option",
+    addOption: "+ Add option",
+    save: "Save",
+    cancel: "Cancel",
+    requiredField: "Please enter the question text in at least one language",
+    liveAnswers: "Live answers",
+    liveAnswersEmpty: "Waiting for the first answer...",
+    adminHintIcon: "💡",
+    participants: "Total responses",
+    byLanguage: "Languages",
+    ended: "Session ended",
+    copyResponses: "Copy responses",
+    downloadCsv: "Download CSV",
+    copied: "Copied to clipboard",
+    csvDownloaded: "CSV downloaded",
+    noResponsesYet: "No responses to export yet",
+    translate: "Auto-translate",
+    translating: "Translating...",
+    translateTooltip: "Translate from the current tab to all other languages",
+    translateError: "Translation failed. Please try again or translate manually.",
+    translateEmpty: "Write the question text first, then click translate.",
+  },
+  es: {
+    adminPanel: "Panel de Administrador",
+    exitAdmin: "Salir del admin",
+    heading: "Control de sesión",
+    subheading: "Activa las preguntas una por una. Los participantes las ven al instante.",
+    tip: "Tip — Comparte el link de la encuesta con los participantes. Verán la pregunta que tú actives. Al crear una pregunta, usa ✨ Auto-traducir para rellenar todos los idiomas de un jalón.",
+    activeNow: "Activa ahora",
+    noneActive: "Ninguna pregunta está activa",
+    noneActiveSub: "Activa una pregunta abajo para mostrarla a los participantes.",
+    closeQuestion: "Cerrar pregunta",
+    responses: "respuestas",
+    questions: "Preguntas",
+    activate: "Activar",
+    edit: "Editar",
+    delete: "Eliminar",
+    deleteConfirm: "¿Eliminar esta pregunta? Las respuestas quedarán huérfanas.",
+    active: "Activa",
+    addQuestion: "Añadir pregunta",
+    session: "Sesión",
+    resetAll: "Borrar respuestas",
+    resetConfirm: "¿Borrar todas las respuestas? Esto no se puede deshacer.",
+    endSession: "Terminar sesión",
+    endConfirm: "¿Terminar la sesión? Los participantes verán una pantalla de agradecimiento.",
+    reopenSession: "Reabrir sesión",
+    newQuestion: "Nueva pregunta",
+    editQuestion: "Editar pregunta",
+    typeLabel: "Tipo de pregunta",
+    typeText: "Texto (abierta)",
+    typeRating: "Calificación (1–5 estrellas)",
+    typeChoice: "Opción múltiple",
+    optional: "Opcional (se puede saltar)",
+    textByLang: "Texto de la pregunta",
+    textHint: "Cada idioma se muestra a los participantes que lo usen",
+    optionsByLang: "Opciones",
+    optionsHint: "Escribe una opción por línea",
+    optionPlaceholder: "Opción",
+    addOption: "+ Añadir opción",
+    save: "Guardar",
+    cancel: "Cancelar",
+    requiredField: "Ingresa el texto de la pregunta en al menos un idioma",
+    liveAnswers: "Respuestas en vivo",
+    liveAnswersEmpty: "Esperando la primera respuesta...",
+    adminHintIcon: "💡",
+    participants: "Respuestas totales",
+    byLanguage: "Idiomas",
+    ended: "Sesión terminada",
+    copyResponses: "Copiar respuestas",
+    downloadCsv: "Descargar CSV",
+    copied: "Copiado al portapapeles",
+    csvDownloaded: "CSV descargado",
+    noResponsesYet: "Aún no hay respuestas para exportar",
+    translate: "Auto-traducir",
+    translating: "Traduciendo...",
+    translateTooltip: "Traducir desde la pestaña actual a todos los demás idiomas",
+    translateError: "Falló la traducción. Intenta de nuevo o traduce manualmente.",
+    translateEmpty: "Escribe primero el texto de la pregunta, luego dale a traducir.",
+  },
+};
+
+// =================================================================
+// INITIAL QUESTIONS (shipped with the app; admin can edit/delete/add)
+// =================================================================
+const initialQuestions = [
+  // Q1 — Overall rating
+  { id: 'q1', type: 'rating', optional: false, text: {
+    en: "How would you rate the overall quality of today's quarterly session?",
+    es: "¿Cómo calificarías la calidad general de la sesión trimestral de hoy?",
+    pt: "Como você avaliaria a qualidade geral da sessão trimestral de hoje?",
+    fr: "Comment évalueriez-vous la qualité globale de la session trimestrielle d'aujourd'hui ?",
+    de: "Wie würden Sie die Gesamtqualität der heutigen Quartalssitzung bewerten?",
+    it: "Come valuteresti la qualità complessiva della sessione trimestrale di oggi?",
+    nl: "Hoe zou je de algehele kwaliteit van de kwartaalsessie van vandaag beoordelen?",
+    zh: "您如何评价今天季度会议的整体质量?",
+  }},
+
+  // Q2 — Which part most impactful
+  { id: 'q2', type: 'choice', optional: false,
+    text: {
+      en: "Which part of today's session will most impact your work?",
+      es: "¿Qué parte de la sesión de hoy tendrá más impacto en tu trabajo?",
+      pt: "Qual parte da sessão de hoje terá maior impacto no seu trabalho?",
+      fr: "Quelle partie de la session d'aujourd'hui aura le plus d'impact sur votre travail ?",
+      de: "Welcher Teil der heutigen Sitzung wird sich am stärksten auf Ihre Arbeit auswirken?",
+      it: "Quale parte della sessione di oggi avrà maggior impatto sul tuo lavoro?",
+      nl: "Welk onderdeel van de sessie van vandaag heeft de meeste impact op jouw werk?",
+      zh: "今天会议的哪一部分对您的工作影响最大?",
+    },
+    options: {
+      en: ["Market insights", "Leadership tactics", "Success stories", "Networking", "Tools & resources"],
+      es: ["Insights del mercado", "Tácticas de liderazgo", "Historias de éxito", "Networking", "Herramientas y recursos"],
+      pt: ["Insights de mercado", "Táticas de liderança", "Histórias de sucesso", "Networking", "Ferramentas e recursos"],
+      fr: ["Analyses de marché", "Tactiques de leadership", "Histoires de réussite", "Networking", "Outils et ressources"],
+      de: ["Markteinblicke", "Führungstaktiken", "Erfolgsgeschichten", "Networking", "Tools & Ressourcen"],
+      it: ["Insight di mercato", "Tattiche di leadership", "Storie di successo", "Networking", "Strumenti e risorse"],
+      nl: ["Marktinzichten", "Leiderschapstactieken", "Succesverhalen", "Netwerken", "Tools en resources"],
+      zh: ["市场洞察", "领导策略", "成功案例", "人脉拓展", "工具与资源"],
+    }
+  },
+
+  // Q3 — Key takeaway
+  { id: 'q3', type: 'text', optional: false, text: {
+    en: "In one sentence, what's the single most important insight you're taking away today?",
+    es: "En una oración, ¿cuál es el insight más importante que te llevas hoy?",
+    pt: "Em uma frase, qual é o insight mais importante que você está levando hoje?",
+    fr: "En une phrase, quelle est la conclusion la plus importante que vous retenez aujourd'hui ?",
+    de: "Was ist in einem Satz die wichtigste Erkenntnis, die Sie heute mitnehmen?",
+    it: "In una frase, qual è l'insight più importante che ti porti via oggi?",
+    nl: "Wat is in één zin het belangrijkste inzicht dat je vandaag meeneemt?",
+    zh: "用一句话概括,您今天带走的最重要的洞见是什么?",
+  }},
+
+  // Q4 — Confidence in reaching goals
+  { id: 'q4', type: 'rating', optional: false, text: {
+    en: "How confident do you feel about exceeding your targets this quarter?",
+    es: "¿Qué tan seguro te sientes de superar tus metas este trimestre?",
+    pt: "Quão confiante você se sente em superar suas metas neste trimestre?",
+    fr: "À quel point êtes-vous confiant de dépasser vos objectifs ce trimestre ?",
+    de: "Wie zuversichtlich sind Sie, Ihre Ziele in diesem Quartal zu übertreffen?",
+    it: "Quanto sei fiducioso di superare i tuoi obiettivi questo trimestre?",
+    nl: "Hoe zeker voel je je over het overtreffen van je doelen dit kwartaal?",
+    zh: "您对本季度超额完成目标有多大信心?",
+  }},
+
+  // Q5 — Next session suggestions (optional)
+  { id: 'q5', type: 'text', optional: true, text: {
+    en: "What topic or speaker would you like to see at the next quarterly session?",
+    es: "¿Qué tema o ponente te gustaría ver en la próxima sesión trimestral?",
+    pt: "Que tema ou palestrante você gostaria de ver na próxima sessão trimestral?",
+    fr: "Quel sujet ou intervenant aimeriez-vous voir lors de la prochaine session trimestrielle ?",
+    de: "Welches Thema oder welchen Redner würden Sie bei der nächsten Quartalssitzung sehen wollen?",
+    it: "Quale argomento o relatore vorresti vedere alla prossima sessione trimestrale?",
+    nl: "Welk onderwerp of welke spreker zou je willen zien bij de volgende kwartaalsessie?",
+    zh: "您希望在下一次季度会议上看到什么主题或演讲者?",
+  }},
+];
+
+const LANG_CODES = ['en', 'es', 'pt', 'fr', 'de', 'it', 'nl', 'zh'];
+
+// =================================================================
+// ICONS
+// =================================================================
+const icons = {
+  check: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  checkLg: '<svg class="icon-lg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6L9 17l-5-5"/></svg>',
+  arrow: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14M12 5l7 7-7 7"/></svg>',
+  chevRight: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9 18l6-6-6-6"/></svg>',
+  globe: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/></svg>',
+  send: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M22 2L11 13M22 2l-7 20-4-9-9-4 20-7z"/></svg>',
+  clock: '<svg class="icon-xl" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>',
+  close: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
+  plus: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M12 5v14M5 12h14"/></svg>',
+  settings: '<svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>',
+  sparkles: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M9.937 15.5A2 2 0 0 0 8.5 14.063l-6.135-1.582a.5.5 0 0 1 0-.962L8.5 9.936A2 2 0 0 0 9.937 8.5l1.582-6.135a.5.5 0 0 1 .963 0L14.063 8.5A2 2 0 0 0 15.5 9.937l6.135 1.581a.5.5 0 0 1 0 .964L15.5 14.063a2 2 0 0 0-1.437 1.437l-1.582 6.135a.5.5 0 0 1-.963 0z"/><path d="M20 3v4M22 5h-4M4 17v2M5 18H3"/></svg>',
+  copy: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>',
+  download: '<svg class="icon-sm" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg>',
+  star: (filled) => `<svg width="24" height="24" viewBox="0 0 24 24" fill="${filled?'#0a5f3e':'none'}" stroke="${filled?'#0a5f3e':'rgba(15,46,34,0.3)'}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+  starSm: (filled) => `<svg width="12" height="12" viewBox="0 0 24 24" fill="${filled?'#0a5f3e':'none'}" stroke="${filled?'#0a5f3e':'rgba(15,46,34,0.25)'}" stroke-linecap="round" stroke-linejoin="round" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>`,
+};
+
+// =================================================================
+// STATE
+// =================================================================
+const state = {
+  view: 'participant',       // 'participant' | 'admin'
+  lang: null,
+  submitting: false,
+  error: '',
+  currentAnswer: null,        // in-progress answer before submit
+
+  config: {                   // synced from storage
+    activeQuestionId: null,
+    sessionEnded: false,
+    questions: initialQuestions,
+  },
+  responses: [],
+  participantId: null,
+  answeredIds: new Set(),     // question IDs answered by this participant in this session
+  lastSeenActiveId: undefined,
+  lastSeenEnded: false,
+
+  // Logo click counter
+  logoClicks: 0,
+  logoTimer: null,
+
+  // Modal
+  modalOpen: false,
+  modalData: null,            // { mode: 'edit'|'new', question: {...}, editingLang: 'en' }
+  modalUiLang: 'en',          // language to show admin UI in (follows participant lang or EN)
+  confirmModal: null,         // { text, onConfirm }
+
+  pollTimer: null,
+};
+
+// =================================================================
+// HELPERS
+// =================================================================
+function t(key) {
+  const pack = uiStrings[state.lang] || uiStrings.en;
+  return pack[key] ?? uiStrings.en[key] ?? key;
+}
+function aT(key) {
+  const pack = adminStrings[state.modalUiLang] || adminStrings.en;
+  return pack[key] ?? adminStrings.en[key] ?? key;
+}
+function escapeHTML(s) {
+  if (s === null || s === undefined) return '';
+  return String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function generateId(prefix) {
+  return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+function questionText(q, lang) {
+  // Get text in user's lang, fallback to first available.
+  if (!q || !q.text) return '';
+  if (q.text[lang]) return q.text[lang];
+  for (const c of LANG_CODES) if (q.text[c]) return q.text[c];
+  return '';
+}
+function questionOptions(q, lang) {
+  if (!q.options) return [];
+  if (q.options[lang] && q.options[lang].length) return q.options[lang];
+  for (const c of LANG_CODES) if (q.options[c] && q.options[c].length) return q.options[c];
+  return [];
+}
+function timeAgo(ts) {
+  const s = Math.floor((Date.now() - ts) / 1000);
+  if (s < 5) return 'just now';
+  if (s < 60) return `${s}s ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  return `${Math.floor(s / 3600)}h ago`;
+}
+
+// =================================================================
+// STORAGE — Firebase (if configured) or local fallback
+// =================================================================
+const memStore = { config: null, responses: {} };
+const hasStorage = typeof window !== 'undefined' && window.storage;
+const fb = () => window.__firebase && window.__firebase.ready ? window.__firebase : null;
+
+async function getConfig() {
+  const f = fb();
+  if (f) {
+    try {
+      const snap = await f.get(f.ref(f.db, 'config'));
+      if (snap.exists()) return snap.val();
+    } catch (e) { console.error('Firebase getConfig error:', e); }
+    return null;
+  }
+  if (hasStorage) {
+    try {
+      const r = await window.storage.get('config', true);
+      if (r) return JSON.parse(r.value);
+    } catch {}
+    return { ...state.config };
+  }
+  return memStore.config || { ...state.config };
+}
+
+async function saveConfig(config) {
+  const f = fb();
+  if (f) {
+    await f.set(f.ref(f.db, 'config'), config);
+    return;
+  }
+  if (hasStorage) {
+    await window.storage.set('config', JSON.stringify(config), true);
+  } else {
+    memStore.config = config;
+  }
+}
+
+async function saveResponse(payload) {
+  const f = fb();
+  if (f) {
+    await f.set(f.ref(f.db, `responses/${payload.id}`), payload);
+    return;
+  }
+  const key = `response:${payload.id}`;
+  if (hasStorage) await window.storage.set(key, JSON.stringify(payload), true);
+  else memStore.responses[key] = payload;
+}
+
+async function loadResponses() {
+  const f = fb();
+  if (f) {
+    try {
+      const snap = await f.get(f.ref(f.db, 'responses'));
+      if (!snap.exists()) return [];
+      const data = snap.val() || {};
+      return Object.values(data).sort((a, b) => b.timestamp - a.timestamp);
+    } catch (e) { console.error('Firebase loadResponses error:', e); return []; }
+  }
+  if (hasStorage) {
+    try {
+      const list = await window.storage.list('response:', true);
+      if (!list || !list.keys || !list.keys.length) return [];
+      const items = await Promise.all(list.keys.map(async k => {
+        try {
+          const r = await window.storage.get(k, true);
+          return r ? JSON.parse(r.value) : null;
+        } catch { return null; }
+      }));
+      return items.filter(Boolean).sort((a, b) => b.timestamp - a.timestamp);
+    } catch { return []; }
+  }
+  return Object.values(memStore.responses).sort((a, b) => b.timestamp - a.timestamp);
+}
+
+async function deleteAllResponses() {
+  const f = fb();
+  if (f) {
+    try {
+      await f.remove(f.ref(f.db, 'responses'));
+    } catch (e) { console.error('Firebase deleteAll error:', e); }
+    return;
+  }
+  if (hasStorage) {
+    try {
+      const list = await window.storage.list('response:', true);
+      if (list && list.keys) await Promise.all(list.keys.map(k => window.storage.delete(k, true)));
+    } catch {}
+  } else {
+    memStore.responses = {};
+  }
+}
+
+// Real-time subscriptions — Realtime DB uses onValue, fallback uses polling
+function subscribeAll() {
+  const f = fb();
+  if (f) {
+    // Live config listener
+    f.onValue(f.ref(f.db, 'config'), (snap) => {
+      if (!snap.exists()) return;
+      const newConfig = snap.val();
+      handleSync(newConfig, state.responses, true);
+    }, (err) => console.error('Config listener error:', err));
+
+    // Live responses listener
+    f.onValue(f.ref(f.db, 'responses'), (snap) => {
+      const data = snap.val() || {};
+      const responses = Object.values(data).sort((a, b) => b.timestamp - a.timestamp);
+      handleSync(state.config, responses, false);
+    }, (err) => console.error('Responses listener error:', err));
+  } else {
+    // Fallback: poll every 2.5s
+    state.pollTimer = setInterval(async () => {
+      try {
+        const [cfg, responses] = await Promise.all([getConfig(), loadResponses()]);
+        if (cfg) handleSync(cfg, responses, true);
+        else handleSync(state.config, responses, false);
+      } catch (e) { console.error('poll error', e); }
+    }, 2500);
+  }
+}
+
+function handleSync(newConfig, responses, configChanged) {
+  const prevActive = state.config.activeQuestionId;
+  const prevEnded = state.config.sessionEnded;
+  const prevQCount = state.config.questions ? state.config.questions.length : 0;
+
+  state.config = newConfig || state.config;
+  state.responses = responses || [];
+
+  if (state.view === 'admin') {
+    if (!state.modalOpen && !state.confirmModal) render();
+  } else {
+    const activeChanged = prevActive !== state.config.activeQuestionId;
+    const endedChanged = prevEnded !== state.config.sessionEnded;
+    const qsChanged = prevQCount !== (state.config.questions ? state.config.questions.length : 0);
+    if (activeChanged || endedChanged || qsChanged) {
+      if (activeChanged) {
+        state.currentAnswer = null;
+        state.currentAnswerForId = null;
+      }
+      render();
+    }
+  }
+}
+
+// =================================================================
+// RENDER DISPATCHER
+// =================================================================
+const app = document.getElementById('app');
+const headerRight = document.getElementById('headerRight');
+const modalRoot = document.getElementById('modalRoot');
+
+function render() {
+  renderHeader();
+  if (state.view === 'admin') renderAdmin();
+  else renderParticipant();
+  renderModals();
+}
+
+// =================================================================
+// HEADER
+// =================================================================
+function renderHeader() {
+  if (state.view === 'admin') {
+    headerRight.innerHTML = `
+      <div class="live-pill"><span class="live-dot-sm"></span>${aT('adminPanel')}</div>
+      <button id="exitAdmin" class="toggle-view">${aT('exitAdmin')} ${icons.close}</button>
+    `;
+    document.getElementById('exitAdmin').addEventListener('click', () => {
+      state.view = 'participant';
+      render();
+    });
+  } else if (state.lang) {
+    // Participant has picked a language — offer a way to change it
+    headerRight.innerHTML = `
+      <button id="changeLangBtn" class="toggle-view">${icons.globe} ${escapeHTML(t('changeLanguage'))}</button>
+    `;
+    document.getElementById('changeLangBtn').addEventListener('click', () => {
+      state.lang = null;
+      state.currentAnswer = null;
+      state.currentAnswerForId = null;
+      render();
+    });
+  } else {
+    headerRight.innerHTML = '';
+  }
+}
+
+// =================================================================
+// PARTICIPANT VIEW
+// =================================================================
+function renderParticipant() {
+  if (!state.lang) return renderLanguagePicker();
+  if (state.config.sessionEnded) return renderStatus('ended');
+  const activeId = state.config.activeQuestionId;
+  if (!activeId) return renderStatus('waiting');
+  const q = state.config.questions.find(x => x.id === activeId);
+  if (!q) return renderStatus('waiting');
+  if (state.answeredIds.has(activeId)) return renderStatus('answered');
+  return renderActiveQuestion(q);
+}
+
+function renderLanguagePicker() {
+  const lang = state.lang;
+  const langButtons = LANG_CODES.map(code => {
+    const tr = uiStrings[code];
+    if (!tr) return '';
+    return `
+      <button class="lang-btn ${lang === code ? 'active' : ''}" data-lang="${code}">
+        <div class="top">
+          <span class="label">${escapeHTML(tr.label)}</span>
+          ${lang === code ? icons.check : ''}
+        </div>
+        <div class="code">${code}</div>
+      </button>
+    `;
+  }).join('');
+
+  app.innerHTML = `
+    <div class="container welcome rise">
+      <div>
+        <div class="eyebrow">${t('section')} · Q${Math.ceil((new Date().getMonth() + 1) / 3)} ${new Date().getFullYear()}</div>
+        <h1 class="hero">
+          ${escapeHTML(t('welcome'))}
+          <span class="italic">${escapeHTML(t('subtitle'))}</span>
+        </h1>
+        <p class="intro">${escapeHTML(t('intro'))}</p>
+        <button id="startBtn" class="btn btn-primary hero-cta" ${!lang ? 'disabled' : ''}>
+          ${escapeHTML(t('start'))} ${icons.arrow}
+        </button>
+      </div>
+      <div class="lang-card-wrap">
+        <div class="grain"></div>
+        <div class="lang-card">
+          <div class="heading">
+            ${icons.globe}
+            <span class="eyebrow">${escapeHTML(t('pickLanguage'))}</span>
+          </div>
+          <div class="lang-grid">${langButtons}</div>
+        </div>
+      </div>
+    </div>
+  `;
+
+  document.querySelectorAll('.lang-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.lang = btn.dataset.lang;
+      state.modalUiLang = (adminStrings[state.lang] ? state.lang : 'en');
+      render();
+    });
+  });
+  const startBtn = document.getElementById('startBtn');
+  if (startBtn) startBtn.addEventListener('click', () => {
+    state.lastSeenActiveId = state.config.activeQuestionId;
+    state.lastSeenEnded = state.config.sessionEnded;
+    render();
+  });
+}
+
+function renderStatus(variant) {
+  // variant: 'waiting' | 'answered' | 'ended'
+  let title, sub, iconHTML, dots = false;
+  if (variant === 'waiting') {
+    title = t('waitingTitle'); sub = t('waitingSub');
+    iconHTML = icons.clock; dots = true;
+  } else if (variant === 'answered') {
+    title = t('answeredTitle'); sub = t('answeredSub');
+    iconHTML = icons.checkLg; dots = true;
+  } else {
+    title = t('endedTitle'); sub = t('endedSub');
+    iconHTML = icons.checkLg;
+  }
+  app.innerHTML = `
+    <div class="container-narrow status-screen rise">
+      <div class="status-icon">${iconHTML}</div>
+      <div class="status-title">${escapeHTML(title)}</div>
+      <div class="status-sub">${escapeHTML(sub)}</div>
+      ${dots ? '<div class="status-dots"><span></span><span></span><span></span></div>' : ''}
+    </div>
+  `;
+}
+
+function renderActiveQuestion(q) {
+  state.currentAnswer = state.currentAnswer !== null && state.currentAnswerForId === q.id ? state.currentAnswer : null;
+  state.currentAnswerForId = q.id;
+
+  const text = questionText(q, state.lang);
+  const value = state.currentAnswer;
+  const canSubmit = q.optional || (value !== null && value !== undefined && value !== '');
+
+  let inputHTML = '';
+  if (q.type === 'text') {
+    inputHTML = `<textarea id="textInput" rows="5" placeholder="${escapeHTML(t('placeholder'))}">${escapeHTML(value || '')}</textarea>`;
+  } else if (q.type === 'rating') {
+    inputHTML = `<div class="rating">${[1,2,3,4,5].map(n => `
+      <button class="rating-btn ${value === n ? 'active' : ''}" data-value="${n}">
+        ${icons.star(value === n)}
+        <span class="num">${n}</span>
+      </button>
+    `).join('')}</div>`;
+  } else if (q.type === 'choice') {
+    const opts = questionOptions(q, state.lang);
+    inputHTML = `<div class="choice-list">${opts.map(opt => `
+      <button class="choice-btn ${value === opt ? 'active' : ''}" data-value="${escapeHTML(opt)}">
+        <span>${escapeHTML(opt)}</span>
+        ${value === opt ? icons.check : ''}
+      </button>
+    `).join('')}</div>`;
+  }
+
+  app.innerHTML = `
+    <div class="container-narrow question-wrap">
+      <div class="question-meta">
+        <span class="left"><span class="live-dot-sm" style="display:inline-block;margin-right:6px;vertical-align:middle"></span>${escapeHTML(t('section'))}</span>
+        ${q.optional ? `<span class="right">${escapeHTML(t('optional'))}</span>` : ''}
+      </div>
+      <div class="slide-in">
+        <h2 class="question">${escapeHTML(text)}</h2>
+        ${inputHTML}
+      </div>
+      ${state.error ? `<div class="error">${escapeHTML(state.error)}</div>` : ''}
+      <div class="nav">
+        <button id="submitBtn" class="btn btn-green" ${(!canSubmit || state.submitting) ? 'disabled' : ''}>
+          ${state.submitting ? '...' : `${escapeHTML(t('submit'))} ${icons.send}`}
+        </button>
+      </div>
+    </div>
+  `;
+
+  const textInput = document.getElementById('textInput');
+  if (textInput) {
+    textInput.addEventListener('input', (e) => {
+      state.currentAnswer = e.target.value;
+      updateSubmitBtn(q);
+    });
+    textInput.focus();
+  }
+  document.querySelectorAll('.rating-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.currentAnswer = parseInt(btn.dataset.value);
+      render();
+    });
+  });
+  document.querySelectorAll('.choice-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      state.currentAnswer = btn.dataset.value;
+      render();
+    });
+  });
+  document.getElementById('submitBtn').addEventListener('click', submitAnswer);
+}
+function updateSubmitBtn(q) {
+  const value = state.currentAnswer;
+  const canSubmit = q.optional || (value !== null && value !== undefined && value !== '');
+  const btn = document.getElementById('submitBtn');
+  if (btn) btn.disabled = !canSubmit || state.submitting;
+}
+async function submitAnswer() {
+  const activeId = state.config.activeQuestionId;
+  if (!activeId) return;
+  state.submitting = true; state.error = '';
+  const submitBtn = document.getElementById('submitBtn');
+  if (submitBtn) submitBtn.disabled = true;
+
+  const payload = {
+    id: generateId('r'),
+    questionId: activeId,
+    answer: state.currentAnswer,
+    language: state.lang,
+    timestamp: Date.now(),
+    participantId: state.participantId,
+  };
+  try {
+    await saveResponse(payload);
+    state.answeredIds.add(activeId);
+    state.currentAnswer = null;
+    state.currentAnswerForId = null;
+  } catch (e) {
+    state.error = t('errorSave');
+  } finally {
+    state.submitting = false;
+    render();
+  }
+}
+
+// =================================================================
+// ADMIN VIEW
+// =================================================================
+function renderAdmin() {
+  const cfg = state.config;
+  const qs = cfg.questions;
+  const activeQ = cfg.activeQuestionId ? qs.find(q => q.id === cfg.activeQuestionId) : null;
+
+  // Count responses per question
+  const byQ = {};
+  for (const r of state.responses) {
+    byQ[r.questionId] = (byQ[r.questionId] || 0) + 1;
+  }
+  const totalResponses = state.responses.length;
+  const uniqueLangs = new Set(state.responses.map(r => r.language));
+
+  // Active question panel
+  let activePanelHTML = '';
+  if (activeQ) {
+    const text = questionText(activeQ, state.modalUiLang);
+    const count = byQ[activeQ.id] || 0;
+    activePanelHTML = `
+      <div class="active-panel">
+        <div class="eyebrow">${aT('activeNow')}</div>
+        <div class="title">${escapeHTML(text)}</div>
+        <div class="meta">
+          <span>${escapeHTML(typeLabel(activeQ.type))}</span>
+          <span>${count} ${aT('responses')}</span>
+        </div>
+        <div class="actions">
+          <button id="closeActiveBtn" class="btn btn-sm btn-outline">${aT('closeQuestion')}</button>
+        </div>
+      </div>
+    `;
+  } else {
+    activePanelHTML = `
+      <div class="active-panel empty">
+        <div class="eyebrow" style="color: var(--muted); margin-bottom: 8px;">${aT('activeNow')}</div>
+        <div class="title">${cfg.sessionEnded ? aT('ended') : aT('noneActive')}</div>
+        <div style="font-size:13px; opacity:0.55; margin-top:4px;">${cfg.sessionEnded ? '' : aT('noneActiveSub')}</div>
+      </div>
+    `;
+  }
+
+  // Live stream of answers for active question
+  let liveStreamHTML = '';
+  if (activeQ) {
+    const answers = state.responses.filter(r => r.questionId === activeQ.id).slice(0, 30);
+    liveStreamHTML = `
+      <div class="admin-section">
+        <div class="admin-section-head">
+          <div class="eyebrow">${aT('liveAnswers')}</div>
+          <div class="live-pill" style="font-size:10px"><span class="live-dot-sm"></span>LIVE</div>
+        </div>
+        <div class="live-stream">
+          ${answers.length === 0
+            ? `<div class="live-stream-empty">${aT('liveAnswersEmpty')}</div>`
+            : answers.map(r => renderLiveAnswer(r, activeQ)).join('')
+          }
+        </div>
+      </div>
+    `;
+  }
+
+  // Questions list
+  const qListHTML = qs.map((q, idx) => renderQCard(q, idx, byQ[q.id] || 0, q.id === cfg.activeQuestionId)).join('');
+
+  app.innerHTML = `
+    <div class="container admin-wrap">
+      <div class="admin-head">
+        <div>
+          <div class="eyebrow">${aT('adminPanel')}</div>
+          <h1>${aT('heading')}</h1>
+          <div style="opacity:0.6; margin-top:8px; font-size:14px;">${aT('subheading')}</div>
+        </div>
+        <div style="display:flex; gap:16px; font-size:13px;">
+          <div><div style="font-size:28px; font-weight:500; letter-spacing:-0.02em;">${totalResponses}</div><div style="opacity:0.5; font-size:11px; text-transform:uppercase; letter-spacing:0.1em;">${aT('participants')}</div></div>
+          <div><div style="font-size:28px; font-weight:500; letter-spacing:-0.02em;">${uniqueLangs.size}</div><div style="opacity:0.5; font-size:11px; text-transform:uppercase; letter-spacing:0.1em;">${aT('byLanguage')}</div></div>
+        </div>
+      </div>
+
+      <div class="admin-hint">
+        <span>${aT('adminHintIcon')}</span>
+        <span>${aT('tip')}</span>
+      </div>
+
+      ${activePanelHTML}
+      ${liveStreamHTML}
+
+      <div class="admin-section">
+        <div class="admin-section-head">
+          <div class="eyebrow">${aT('questions')}</div>
+        </div>
+        <div class="q-list">${qListHTML}</div>
+        <button id="addQBtn" class="add-q-btn">${icons.plus} ${aT('addQuestion')}</button>
+      </div>
+
+      <div class="admin-section">
+        <div class="admin-section-head">
+          <div class="eyebrow">${aT('session')}</div>
+        </div>
+        <div class="session-actions">
+          <button id="copyBtn" class="btn btn-sm btn-outline">${icons.copy} ${aT('copyResponses')}</button>
+          <button id="csvBtn" class="btn btn-sm btn-outline">${icons.download} ${aT('downloadCsv')}</button>
+          ${cfg.sessionEnded
+            ? `<button id="reopenBtn" class="btn btn-sm btn-outline">${aT('reopenSession')}</button>`
+            : `<button id="endBtn" class="btn btn-sm btn-outline">${aT('endSession')}</button>`
+          }
+          <button id="resetBtn" class="btn btn-sm btn-danger">${aT('resetAll')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  // Bind admin buttons
+  const closeBtn = document.getElementById('closeActiveBtn');
+  if (closeBtn) closeBtn.addEventListener('click', closeActiveQuestion);
+
+  document.querySelectorAll('[data-activate]').forEach(btn => {
+    btn.addEventListener('click', () => activateQuestion(btn.dataset.activate));
+  });
+  document.querySelectorAll('[data-edit]').forEach(btn => {
+    btn.addEventListener('click', () => openQuestionEditor(btn.dataset.edit));
+  });
+  document.querySelectorAll('[data-delete]').forEach(btn => {
+    btn.addEventListener('click', () => deleteQuestion(btn.dataset.delete));
+  });
+
+  document.getElementById('addQBtn').addEventListener('click', () => openQuestionEditor(null));
+  const endBtn = document.getElementById('endBtn');
+  if (endBtn) endBtn.addEventListener('click', endSession);
+  const reopenBtn = document.getElementById('reopenBtn');
+  if (reopenBtn) reopenBtn.addEventListener('click', reopenSession);
+  document.getElementById('resetBtn').addEventListener('click', resetAllResponses);
+  document.getElementById('copyBtn').addEventListener('click', copyResponsesAsText);
+  document.getElementById('csvBtn').addEventListener('click', downloadResponsesCSV);
+}
+
+function typeLabel(type) {
+  return type === 'text' ? aT('typeText') : type === 'rating' ? aT('typeRating') : aT('typeChoice');
+}
+
+function renderQCard(q, idx, count, isActive) {
+  const text = questionText(q, state.modalUiLang);
+  return `
+    <div class="q-card ${isActive ? 'active' : ''}">
+      <div class="q-num">${idx + 1}</div>
+      <div class="q-body">
+        <div class="q-text">${escapeHTML(text || '(no text)')}</div>
+        <div class="q-meta">
+          <span class="badge">${escapeHTML(typeLabel(q.type))}</span>
+          <span>${count} ${aT('responses')}</span>
+          ${q.optional ? `<span>${escapeHTML(aT('optional'))}</span>` : ''}
+          ${isActive ? `<span style="color:var(--green); font-weight:600;">● ${aT('active')}</span>` : ''}
+        </div>
+      </div>
+      <div class="q-actions">
+        ${!isActive ? `<button class="q-action primary" data-activate="${q.id}">${aT('activate')}</button>` : ''}
+        <button class="q-action" data-edit="${q.id}">${aT('edit')}</button>
+        <button class="q-action danger" data-delete="${q.id}">${aT('delete')}</button>
+      </div>
+    </div>
+  `;
+}
+
+function renderLiveAnswer(r, q) {
+  const langLabel = (uiStrings[r.language] && uiStrings[r.language].label) || r.language;
+  let displayValue = '';
+  if (q.type === 'rating') {
+    const stars = [1,2,3,4,5].map(n => icons.starSm(n <= r.answer)).join('');
+    displayValue = `<span class="value" style="display:inline-flex; gap:2px; align-items:center;">${stars}</span>`;
+  } else {
+    displayValue = `<span class="value">${escapeHTML(String(r.answer))}</span>`;
+  }
+  return `
+    <div class="live-answer">
+      <div class="pill">${escapeHTML(langLabel)}</div>
+      <div class="content">
+        ${displayValue}
+        <div class="when">${timeAgo(r.timestamp)}</div>
+      </div>
+    </div>
+  `;
+}
+
+// =================================================================
+// ADMIN ACTIONS
+// =================================================================
+async function activateQuestion(questionId) {
+  state.config.activeQuestionId = questionId;
+  state.config.sessionEnded = false;
+  await saveConfig(state.config);
+  render();
+}
+async function closeActiveQuestion() {
+  state.config.activeQuestionId = null;
+  await saveConfig(state.config);
+  render();
+}
+async function endSession() {
+  openConfirm(aT('endConfirm'), async () => {
+    state.config.sessionEnded = true;
+    state.config.activeQuestionId = null;
+    await saveConfig(state.config);
+    render();
+  });
+}
+async function reopenSession() {
+  state.config.sessionEnded = false;
+  await saveConfig(state.config);
+  render();
+}
+async function resetAllResponses() {
+  openConfirm(aT('resetConfirm'), async () => {
+    await deleteAllResponses();
+    state.responses = [];
+    render();
+  });
+}
+async function deleteQuestion(questionId) {
+  openConfirm(aT('deleteConfirm'), async () => {
+    state.config.questions = state.config.questions.filter(q => q.id !== questionId);
+    if (state.config.activeQuestionId === questionId) state.config.activeQuestionId = null;
+    await saveConfig(state.config);
+    render();
+  });
+}
+
+// =================================================================
+// EXPORTS (copy to clipboard, download CSV)
+// =================================================================
+function showToast(msg) {
+  const existing = document.querySelector('.toast');
+  if (existing) existing.remove();
+  const div = document.createElement('div');
+  div.className = 'toast';
+  div.innerHTML = `${icons.check}<span>${escapeHTML(msg)}</span>`;
+  document.body.appendChild(div);
+  setTimeout(() => {
+    div.classList.add('hide');
+    setTimeout(() => div.remove(), 300);
+  }, 1800);
+}
+
+function buildResponsesText() {
+  const lines = [];
+  const now = new Date();
+  const qs = state.config.questions || [];
+  const byQ = {};
+  for (const r of state.responses) (byQ[r.questionId] = byQ[r.questionId] || []).push(r);
+
+  lines.push('CITY DEVELOPMENT MASTERMIND');
+  lines.push(`Exported: ${now.toLocaleDateString()} ${now.toLocaleTimeString()}`);
+  lines.push('');
+  lines.push('═'.repeat(50));
+  lines.push(`TOTAL RESPONSES: ${state.responses.length}`);
+  lines.push(`LANGUAGES: ${new Set(state.responses.map(r => r.language)).size}`);
+  lines.push('═'.repeat(50));
+
+  qs.forEach((q, idx) => {
+    const responses = (byQ[q.id] || []).slice().sort((a, b) => a.timestamp - b.timestamp);
+    const text = questionText(q, state.modalUiLang);
+    lines.push('');
+    lines.push('');
+    lines.push(`Q${idx + 1} — ${text}`);
+    lines.push(`Type: ${typeLabel(q.type)}  |  Responses: ${responses.length}`);
+
+    if (responses.length === 0) {
+      lines.push('  (no responses)');
+      return;
+    }
+
+    if (q.type === 'rating') {
+      const sum = responses.reduce((a, r) => a + (typeof r.answer === 'number' ? r.answer : 0), 0);
+      const avg = (sum / responses.length).toFixed(2);
+      lines.push(`Average: ${avg} / 5`);
+      lines.push('Distribution:');
+      for (let n = 5; n >= 1; n--) {
+        const count = responses.filter(r => r.answer === n).length;
+        const bar = '█'.repeat(count);
+        lines.push(`  ${n}★  ${String(count).padStart(3, ' ')}  ${bar}`);
+      }
+    } else if (q.type === 'choice') {
+      const counts = {};
+      responses.forEach(r => { counts[r.answer] = (counts[r.answer] || 0) + 1; });
+      const sorted = Object.entries(counts).sort((a, b) => b[1] - a[1]);
+      sorted.forEach(([opt, c]) => {
+        const pct = Math.round((c / responses.length) * 100);
+        lines.push(`  • ${opt}: ${c} (${pct}%)`);
+      });
+    } else {
+      // text
+      lines.push('Answers:');
+      responses.forEach((r, i) => {
+        const langLabel = (uiStrings[r.language] && uiStrings[r.language].label) || r.language;
+        lines.push(`  ${i + 1}. [${langLabel}] ${r.answer}`);
+      });
+    }
+  });
+
+  return lines.join('\n');
+}
+
+function csvEscape(value) {
+  const s = value === null || value === undefined ? '' : String(value);
+  if (/[",\n\r]/.test(s)) return `"${s.replace(/"/g, '""')}"`;
+  return s;
+}
+
+function buildResponsesCSV() {
+  const rows = [['Question #', 'Question', 'Type', 'Answer', 'Language', 'Timestamp']];
+  const qs = state.config.questions || [];
+  const qOrder = {};
+  qs.forEach((q, idx) => { qOrder[q.id] = idx + 1; });
+
+  const sorted = [...state.responses].sort((a, b) => {
+    const qa = qOrder[a.questionId] || 999;
+    const qb = qOrder[b.questionId] || 999;
+    if (qa !== qb) return qa - qb;
+    return a.timestamp - b.timestamp;
+  });
+
+  sorted.forEach(r => {
+    const q = qs.find(x => x.id === r.questionId);
+    const qText = q ? questionText(q, state.modalUiLang) : '(deleted question)';
+    const qNum = qOrder[r.questionId] || '';
+    const type = q ? q.type : '';
+    const answer = r.answer !== null && r.answer !== undefined ? String(r.answer) : '';
+    const isoTs = new Date(r.timestamp).toISOString();
+    rows.push([qNum, qText, type, answer, r.language, isoTs]);
+  });
+
+  return rows.map(row => row.map(csvEscape).join(',')).join('\n');
+}
+
+async function copyResponsesAsText() {
+  if (!state.responses.length) { showToast(aT('noResponsesYet')); return; }
+  const text = buildResponsesText();
+  try {
+    await navigator.clipboard.writeText(text);
+    showToast(aT('copied'));
+  } catch (e) {
+    // Fallback for older browsers / non-secure contexts
+    const ta = document.createElement('textarea');
+    ta.value = text;
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); showToast(aT('copied')); }
+    catch { alert('Copy failed — please select and copy manually.'); }
+    document.body.removeChild(ta);
+  }
+}
+
+function downloadResponsesCSV() {
+  if (!state.responses.length) { showToast(aT('noResponsesYet')); return; }
+  const csv = buildResponsesCSV();
+  // BOM ensures Excel opens UTF-8 correctly (important for Chinese, accents, etc.)
+  const blob = new Blob(['\ufeff' + csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const dateStr = new Date().toISOString().slice(0, 10);
+  a.href = url;
+  a.download = `mastermind-responses-${dateStr}.csv`;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+  showToast(aT('csvDownloaded'));
+}
+
+// =================================================================
+// QUESTION EDITOR MODAL
+// =================================================================
+function openQuestionEditor(questionId) {
+  if (questionId) {
+    const existing = state.config.questions.find(q => q.id === questionId);
+    if (!existing) return;
+    state.modalData = {
+      mode: 'edit',
+      question: JSON.parse(JSON.stringify(existing)),
+      editingLang: state.modalUiLang,
+    };
+  } else {
+    state.modalData = {
+      mode: 'new',
+      question: {
+        id: generateId('q'),
+        type: 'text',
+        optional: false,
+        text: {},
+        options: {},
+      },
+      editingLang: state.modalUiLang,
+    };
+  }
+  state.modalOpen = true;
+  renderModals();
+}
+
+function closeModal() {
+  state.modalOpen = false;
+  state.modalData = null;
+  state.confirmModal = null;
+  renderModals();
+}
+
+function renderModals() {
+  if (state.confirmModal) { renderConfirmModal(); return; }
+  if (!state.modalOpen || !state.modalData) { modalRoot.innerHTML = ''; return; }
+  renderEditorModal();
+}
+
+function renderEditorModal() {
+  const m = state.modalData;
+  const q = m.question;
+  const currentLang = m.editingLang;
+  const langsWithContent = new Set(Object.keys(q.text || {}).filter(l => q.text[l]));
+
+  const langTabsHTML = LANG_CODES.map(code => `
+    <button class="lang-tab ${code === currentLang ? 'active' : ''}" data-lang-tab="${code}">
+      ${escapeHTML(uiStrings[code]?.label || code)}
+      ${langsWithContent.has(code) ? '<span class="has-content"></span>' : ''}
+    </button>
+  `).join('');
+
+  const currentText = (q.text && q.text[currentLang]) || '';
+  let optionsHTML = '';
+  if (q.type === 'choice') {
+    const opts = (q.options && q.options[currentLang]) || [];
+    optionsHTML = `
+      <div class="field">
+        <div class="field-label">
+          <span>${aT('optionsByLang')}</span>
+          <span class="hint">${aT('optionsHint')}</span>
+        </div>
+        <div class="options-list" id="optionsList">
+          ${opts.map((o, i) => `
+            <div class="option-row">
+              <input class="text-input" type="text" value="${escapeHTML(o)}" data-opt-idx="${i}" placeholder="${aT('optionPlaceholder')} ${i+1}">
+              <button class="option-remove" data-opt-remove="${i}">${icons.close}</button>
+            </div>
+          `).join('')}
+        </div>
+        <button class="option-add" id="optAddBtn">${aT('addOption')}</button>
+      </div>
+    `;
+  }
+
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop" id="modalBackdrop">
+      <div class="modal" id="modalContent">
+        <div class="modal-head">
+          <div class="modal-title">${m.mode === 'new' ? aT('newQuestion') : aT('editQuestion')}</div>
+          <button class="modal-close" id="modalCloseBtn">${icons.close}</button>
+        </div>
+
+        <div class="row-2">
+          <div class="field">
+            <div class="field-label">${aT('typeLabel')}</div>
+            <select class="select-input" id="typeSelect" style="width:100%">
+              <option value="text" ${q.type==='text'?'selected':''}>${aT('typeText')}</option>
+              <option value="rating" ${q.type==='rating'?'selected':''}>${aT('typeRating')}</option>
+              <option value="choice" ${q.type==='choice'?'selected':''}>${aT('typeChoice')}</option>
+            </select>
+          </div>
+          <div class="field" style="display:flex; align-items:flex-end; padding-bottom: 12px;">
+            <label class="checkbox-row">
+              <input type="checkbox" id="optionalChk" ${q.optional?'checked':''}>
+              <span style="font-size:13px;">${aT('optional')}</span>
+            </label>
+          </div>
+        </div>
+
+        <div class="field">
+          <div class="field-label">
+            <span>${aT('textByLang')}</span>
+            <span class="hint">${aT('textHint')}</span>
+          </div>
+          <div class="lang-tabs">${langTabsHTML}</div>
+          <div class="translate-row">
+            <span class="translate-source-hint">${escapeHTML(uiStrings[currentLang]?.label || currentLang)} → ${LANG_CODES.filter(c => c !== currentLang).length} ${state.modalUiLang === 'es' ? 'idiomas' : 'languages'}</span>
+            <button class="translate-btn" id="translateBtn" title="${aT('translateTooltip')}">
+              ${icons.sparkles}<span id="translateLabel">${aT('translate')}</span>
+            </button>
+          </div>
+          <textarea id="qTextInput" rows="3" placeholder="${escapeHTML(uiStrings[currentLang]?.label || '')}">${escapeHTML(currentText)}</textarea>
+        </div>
+
+        ${optionsHTML}
+
+        <div class="modal-actions">
+          <button class="btn btn-sm btn-outline" id="modalCancelBtn">${aT('cancel')}</button>
+          <button class="btn btn-sm btn-green" id="modalSaveBtn">${aT('save')}</button>
+        </div>
+        <div id="modalError" class="error" style="display:none; margin-top:12px;"></div>
+      </div>
+    </div>
+  `;
+
+  // Backdrop click closes
+  document.getElementById('modalBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'modalBackdrop') closeModal();
+  });
+  document.getElementById('modalCloseBtn').addEventListener('click', closeModal);
+  document.getElementById('modalCancelBtn').addEventListener('click', closeModal);
+
+  // Language tabs — save current language input before switching
+  document.querySelectorAll('[data-lang-tab]').forEach(tab => {
+    tab.addEventListener('click', () => {
+      saveCurrentLangInputs();
+      m.editingLang = tab.dataset.langTab;
+      renderEditorModal();
+    });
+  });
+
+  // Type select
+  document.getElementById('typeSelect').addEventListener('change', (e) => {
+    saveCurrentLangInputs();
+    m.question.type = e.target.value;
+    if (m.question.type === 'choice' && !m.question.options) m.question.options = {};
+    renderEditorModal();
+  });
+
+  // Optional checkbox
+  document.getElementById('optionalChk').addEventListener('change', (e) => {
+    m.question.optional = e.target.checked;
+  });
+
+  // Text input — save on input for reactivity of lang tab dots
+  document.getElementById('qTextInput').addEventListener('input', (e) => {
+    if (!m.question.text) m.question.text = {};
+    m.question.text[m.editingLang] = e.target.value;
+    // live-update the dot on the current tab
+    const activeTab = document.querySelector('.lang-tab.active');
+    if (activeTab) {
+      const existingDot = activeTab.querySelector('.has-content');
+      if (e.target.value && !existingDot) {
+        activeTab.insertAdjacentHTML('beforeend', '<span class="has-content"></span>');
+      } else if (!e.target.value && existingDot) {
+        existingDot.remove();
+      }
+    }
+  });
+
+  if (q.type === 'choice') {
+    document.querySelectorAll('[data-opt-idx]').forEach(inp => {
+      inp.addEventListener('input', (e) => {
+        const i = parseInt(e.target.dataset.optIdx);
+        if (!m.question.options[m.editingLang]) m.question.options[m.editingLang] = [];
+        m.question.options[m.editingLang][i] = e.target.value;
+      });
+    });
+    document.querySelectorAll('[data-opt-remove]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        saveCurrentLangInputs();
+        const i = parseInt(btn.dataset.optRemove);
+        if (!m.question.options[m.editingLang]) m.question.options[m.editingLang] = [];
+        m.question.options[m.editingLang].splice(i, 1);
+        renderEditorModal();
+      });
+    });
+    document.getElementById('optAddBtn').addEventListener('click', () => {
+      saveCurrentLangInputs();
+      if (!m.question.options[m.editingLang]) m.question.options[m.editingLang] = [];
+      m.question.options[m.editingLang].push('');
+      renderEditorModal();
+    });
+  }
+
+  document.getElementById('modalSaveBtn').addEventListener('click', saveQuestionFromModal);
+  document.getElementById('translateBtn').addEventListener('click', handleTranslate);
+
+  // Focus text input
+  setTimeout(() => { const el = document.getElementById('qTextInput'); if (el) el.focus(); }, 50);
+}
+
+function saveCurrentLangInputs() {
+  const m = state.modalData;
+  if (!m) return;
+  const textInp = document.getElementById('qTextInput');
+  if (textInp) {
+    if (!m.question.text) m.question.text = {};
+    m.question.text[m.editingLang] = textInp.value;
+  }
+  if (m.question.type === 'choice') {
+    const optInputs = document.querySelectorAll('[data-opt-idx]');
+    if (optInputs.length) {
+      if (!m.question.options) m.question.options = {};
+      if (!m.question.options[m.editingLang]) m.question.options[m.editingLang] = [];
+      optInputs.forEach(inp => {
+        const i = parseInt(inp.dataset.optIdx);
+        m.question.options[m.editingLang][i] = inp.value;
+      });
+    }
+  }
+}
+
+async function saveQuestionFromModal() {
+  saveCurrentLangInputs();
+  const m = state.modalData;
+  const q = m.question;
+
+  // Clean up empty strings in text
+  q.text = q.text || {};
+  for (const l of Object.keys(q.text)) {
+    if (!q.text[l] || !q.text[l].trim()) delete q.text[l];
+  }
+  // Ensure at least one language has text
+  if (Object.keys(q.text).length === 0) {
+    const err = document.getElementById('modalError');
+    if (err) { err.textContent = aT('requiredField'); err.style.display = 'block'; }
+    return;
+  }
+
+  // Clean options
+  if (q.type === 'choice') {
+    q.options = q.options || {};
+    for (const l of Object.keys(q.options)) {
+      q.options[l] = (q.options[l] || []).map(o => (o || '').trim()).filter(Boolean);
+      if (!q.options[l].length) delete q.options[l];
+    }
+  } else {
+    delete q.options;
+  }
+
+  // Persist
+  if (m.mode === 'edit') {
+    const idx = state.config.questions.findIndex(x => x.id === q.id);
+    if (idx >= 0) state.config.questions[idx] = q;
+  } else {
+    state.config.questions.push(q);
+  }
+  await saveConfig(state.config);
+  closeModal();
+  render();
+}
+
+// =================================================================
+// AUTO-TRANSLATE (uses Claude API)
+// =================================================================
+const LANG_NAMES = {
+  en: 'English', es: 'Spanish', pt: 'Portuguese (Brazil)', fr: 'French',
+  de: 'German', it: 'Italian', nl: 'Dutch', zh: 'Simplified Chinese'
+};
+
+async function handleTranslate() {
+  saveCurrentLangInputs();
+  const m = state.modalData;
+  if (!m) return;
+
+  const sourceLang = m.editingLang;
+  const sourceText = (m.question.text && m.question.text[sourceLang] || '').trim();
+  const errEl = document.getElementById('modalError');
+
+  if (!sourceText) {
+    if (errEl) { errEl.textContent = aT('translateEmpty'); errEl.style.display = 'block'; }
+    return;
+  }
+  if (errEl) errEl.style.display = 'none';
+
+  const targetLangs = LANG_CODES.filter(c => c !== sourceLang);
+  const isChoice = m.question.type === 'choice';
+  const sourceOptions = isChoice ? ((m.question.options && m.question.options[sourceLang]) || []).filter(o => o && o.trim()) : [];
+
+  // UI: loading state
+  const btn = document.getElementById('translateBtn');
+  const label = document.getElementById('translateLabel');
+  if (btn) { btn.disabled = true; btn.classList.add('loading'); }
+  if (label) label.textContent = aT('translating');
+
+  const schemaLines = targetLangs.map(l =>
+    `  "${l}": { "text": "..."${isChoice ? `, "options": [${sourceOptions.map(() => '"..."').join(', ')}]` : ''} }`
+  ).join(',\n');
+
+  const prompt = `You are translating a survey question for a live corporate quarterly feedback session. The tone is professional but warm.
+
+Source language: ${LANG_NAMES[sourceLang]}
+Source question text: "${sourceText}"
+${isChoice && sourceOptions.length ? `Source answer options (multiple-choice): ${JSON.stringify(sourceOptions)}` : ''}
+
+Translate to these languages: ${targetLangs.map(l => LANG_NAMES[l]).join(', ')}.
+
+Rules:
+- Keep translations natural, professional, and concise — not literal.
+- Preserve any punctuation style (question marks, etc.) appropriately for each language.
+- For Chinese, use Simplified Chinese characters.
+${isChoice ? '- Translate each answer option to a short, natural equivalent. Keep the same order.' : ''}
+
+Return ONLY a valid JSON object. No markdown code fences, no commentary. Exact structure:
+{
+${schemaLines}
+}`;
+
+  try {
+    const resp = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        model: 'claude-sonnet-4-20250514',
+        max_tokens: 1000,
+        messages: [{ role: 'user', content: prompt }]
+      })
+    });
+    if (!resp.ok) throw new Error('API error ' + resp.status);
+    const data = await resp.json();
+    const rawText = (data.content || []).filter(b => b.type === 'text').map(b => b.text).join('').trim();
+    // Strip potential ```json fences
+    const cleaned = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```\s*$/i, '').trim();
+    const translations = JSON.parse(cleaned);
+
+    // Apply translations
+    for (const code of targetLangs) {
+      const entry = translations[code];
+      if (!entry) continue;
+      if (entry.text) {
+        if (!m.question.text) m.question.text = {};
+        m.question.text[code] = entry.text;
+      }
+      if (isChoice && Array.isArray(entry.options) && entry.options.length) {
+        if (!m.question.options) m.question.options = {};
+        m.question.options[code] = entry.options;
+      }
+    }
+    renderEditorModal();
+  } catch (e) {
+    console.error('Translation failed:', e);
+    if (btn) { btn.disabled = false; btn.classList.remove('loading'); }
+    if (label) label.textContent = aT('translate');
+    if (errEl) { errEl.textContent = aT('translateError'); errEl.style.display = 'block'; }
+  }
+}
+
+// =================================================================
+// CONFIRM MODAL
+// =================================================================
+function openConfirm(text, onConfirm) {
+  state.confirmModal = { text, onConfirm };
+  renderModals();
+}
+function renderConfirmModal() {
+  const c = state.confirmModal;
+  modalRoot.innerHTML = `
+    <div class="modal-backdrop" id="confirmBackdrop">
+      <div class="modal" style="max-width:440px;">
+        <div class="confirm-text" style="font-size:16px; line-height:1.5;">${escapeHTML(c.text)}</div>
+        <div class="modal-actions">
+          <button class="btn btn-sm btn-outline" id="confirmCancel">${aT('cancel')}</button>
+          <button class="btn btn-sm btn-danger" id="confirmOk" style="color:var(--cream); background:var(--danger); border-color:var(--danger);">${aT('save').replace(/Save|Guardar/, 'OK')}</button>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('confirmBackdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'confirmBackdrop') { state.confirmModal = null; renderModals(); }
+  });
+  document.getElementById('confirmCancel').addEventListener('click', () => {
+    state.confirmModal = null; renderModals();
+  });
+  document.getElementById('confirmOk').addEventListener('click', async () => {
+    const fn = c.onConfirm;
+    state.confirmModal = null; renderModals();
+    if (fn) await fn();
+  });
+}
+
+// =================================================================
+// LOGO CLICK HANDLER (5 clicks → admin)
+// =================================================================
+document.getElementById('logo').addEventListener('click', () => {
+  if (state.view === 'admin') return;
+  state.logoClicks++;
+  clearTimeout(state.logoTimer);
+  state.logoTimer = setTimeout(() => { state.logoClicks = 0; }, 1500);
+  if (state.logoClicks >= 5) {
+    state.logoClicks = 0;
+    state.view = 'admin';
+    state.modalUiLang = (adminStrings[state.lang] ? state.lang : 'en');
+    loadResponses().then(rs => { state.responses = rs; render(); });
+  }
+});
+
+// =================================================================
+// SYNC — real-time via Firebase listeners, or polling as fallback
+// (subscribeAll() is defined up in the STORAGE section)
+// =================================================================
+
+// =================================================================
+// BOOT
+// =================================================================
+async function boot() {
+  state.participantId = generateId('p');
+
+  const cfg = await getConfig();
+  if (cfg) {
+    state.config = cfg;
+  } else {
+    // No config exists yet — seed with the initial questions
+    await saveConfig(state.config);
+  }
+  state.responses = await loadResponses();
+  render();
+
+  // Start real-time subscriptions (Firebase onSnapshot if configured, else polling)
+  subscribeAll();
+
+  // Log which mode we're in
+  if (fb()) console.log('✓ Running in Firebase real-time mode');
+  else console.log('ℹ Running in local storage mode (Firebase not configured)');
+}
+
+// Wait for Firebase module to have finished its init check before booting
+if (window.__firebase) {
+  boot();
+} else {
+  window.addEventListener('firebase-check-complete', boot, { once: true });
+  // Safety timeout in case the module never fires
+  setTimeout(() => { if (!window.__firebase) { window.__firebase = { ready: false }; boot(); } }, 3000);
+}
+</script>
+</body>
+</html>
