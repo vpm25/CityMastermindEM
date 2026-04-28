@@ -176,7 +176,7 @@ export default function App() {
   const [waitingNext, setWaitingNext]    = useState(false);
   const [sessionDone, setSessionDone]    = useState(false);
   const [pollRef,     setPollRef]        = useState(null);
-  const [participantToken] = useState(() => 'p_' + Math.random().toString(36).slice(2,10));
+  const [answeredQId, setAnsweredQId] = useState(null);
   const sessionWasOpenRef = useRef(false);
 
   const t       = UI[lang] || UI.en;
@@ -285,6 +285,7 @@ export default function App() {
         time:new Date().toLocaleTimeString([],{hour:"2-digit",minute:"2-digit"}),
       }]);
     }
+    setAnsweredQId(currentQId);
     setWaitingNext(true);
     setScreen("waiting");
     startPolling();
@@ -334,26 +335,33 @@ export default function App() {
             })));
           }
         }
-        // Session closed - show thank you
+        // Session closed
         if (!sessionData.session_open) {
-          setSessionDone(true);
-          setWaitingNext(false);
-          setCurrentQId(null);
-          setScreen("sessionDone");
-          clearInterval(interval);
+          if (sessionWasOpenRef.current) {
+            // Session WAS open before = show thank you
+            setSessionDone(true);
+            setWaitingNext(false);
+            setCurrentQId(null);
+            setScreen("sessionDone");
+            clearInterval(interval);
+          } else {
+            // Session never opened = keep waiting
+            setScreen("waiting");
+          }
           return;
         }
         const newQId = sessionData.current_question_id;
         setCurrentQId(prev => {
           if (prev !== newQId) {
             setAnswers([""]);
+            setAnsweredQId(null);
           }
           return newQId;
         });
         // Only show survey if session is open AND there is an active question
         if (sessionData.session_open) {
           sessionWasOpenRef.current = true;
-          if (newQId) {
+          if (newQId && newQId !== answeredQId) {
             setScreen("survey");
             setWaitingNext(false);
           } else {
@@ -1060,7 +1068,7 @@ ${block}`;
                     );
                   })}
                 </div>
-              )}
+              )
             )}
 
             {/* ── QUESTIONS TAB ── */}
